@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>地圖標記編輯器</title>
+<style>
+:root{
+  --font:"Microsoft JhengHei UI","Microsoft JhengHei","PingFang TC","Noto Sans CJK TC","Noto Sans TC","Noto Sans CJK SC",Arial,sans-serif;
+  --bg:#f3f5f8; --card:#fff; --line:#dfe3ea; --text:#1f2933; --muted:#6b7684;
+  --primary:#1f6feb; --primary-d:#1658c0; --orange:#f06a00; --danger:#d93025;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font-family:var(--font);color:var(--text);background:var(--bg);font-size:14px}
+button,input,select,textarea{font-family:inherit;font-size:13px}
+button{cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--text);border-radius:6px;padding:6px 10px;line-height:1.2}
+button:hover:not(:disabled){background:#f0f3f7}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+button.primary:hover:not(:disabled){background:var(--primary-d)}
+button.orange{background:var(--orange);border-color:var(--orange);color:#fff}
+button.orange:hover:not(:disabled){background:#d85f00}
+button.danger{color:var(--danger);border-color:#f1c4c0}
+button.danger:hover:not(:disabled){background:#fdecea}
+button.danger-fill{background:var(--danger);border-color:var(--danger);color:#fff}
+button.armed{background:#0b8043;border-color:#0b8043;color:#fff}
+.app{display:flex;flex-direction:column;height:100vh}
+header.topbar{display:flex;align-items:center;gap:16px;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:19px;margin:0;font-weight:700}
+header .sub{color:var(--muted);font-size:12px}
+.toolbar{display:flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap}
+.toolbar .sep{width:1px;height:22px;background:var(--line);margin:0 4px}
+.toolbar label{color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px}
+.toolbar input{border:1px solid var(--line);border-radius:6px;padding:5px 8px;width:160px}
+main{flex:1;display:flex;gap:12px;padding:12px;min-height:0}
+#viewport{flex:1;position:relative;overflow:hidden;border:1px solid var(--line);border-radius:10px;
+  background-color:#e9edf2;background-image:linear-gradient(45deg,#e1e6ec 25%,transparent 25%,transparent 75%,#e1e6ec 75%),linear-gradient(45deg,#e1e6ec 25%,transparent 25%,transparent 75%,#e1e6ec 75%);
+  background-size:24px 24px;background-position:0 0,12px 12px;cursor:grab;touch-action:none;user-select:none}
+#viewport.panning{cursor:grabbing}
+#viewport.adding{cursor:crosshair}
+#stage{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+#mapImg{display:block;user-select:none;-webkit-user-drag:none;pointer-events:none;box-shadow:0 1px 6px rgba(0,0,0,.18)}
+#markerLayer{position:absolute;left:0;top:0}
+.marker{position:absolute;left:0;top:0;cursor:move}
+.marker svg{display:block;overflow:visible}
+.marker text{font-family:var(--font);font-weight:700;pointer-events:none}
+.marker.sel{outline:calc(2px * var(--inv,1)) dashed var(--primary);outline-offset:calc(3px * var(--inv,1))}
+#empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);gap:10px;pointer-events:none;text-align:center}
+#empty .big{font-size:18px;color:var(--text);font-weight:600}
+#empty button{pointer-events:auto}
+#viewport.dragover{outline:3px dashed var(--primary);outline-offset:-6px}
+.zoombar{position:absolute;left:10px;bottom:10px;display:flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:4px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.zoombar button{padding:4px 9px}
+#zoomLabel{min-width:52px;text-align:center;font-size:12px;color:var(--muted)}
+#addHint{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:#0b8043;color:#fff;padding:6px 14px;border-radius:16px;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,.2);pointer-events:none}
+#tooltip{position:absolute;max-width:280px;background:rgba(32,33,36,.94);color:#fff;padding:7px 10px;border-radius:6px;font-size:12px;pointer-events:none;white-space:pre-wrap;word-break:break-word;z-index:30}
+#tooltip b{display:block;font-size:13px;margin-bottom:2px}
+#popup{position:absolute;z-index:20;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);width:292px;max-height:calc(100% - 16px);overflow:auto;cursor:default;user-select:text}
+.pop-head{display:flex;align-items:center;justify-content:space-between;padding:8px 10px 6px;border-bottom:1px solid var(--line)}
+.pop-title{font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+.pop-close{border:none;background:none;font-size:18px;padding:0 4px;color:var(--muted)}
+.pop-tabs{display:flex;gap:6px;padding:8px 10px}
+.pop-tabs button{flex:1}
+.pop-tabs button.on{background:#e8f0fe;border-color:var(--primary);color:var(--primary-d);font-weight:600}
+.pop-body{padding:0 10px 10px}
+.pop-info{font-size:12px;color:var(--muted);padding:0 10px 10px}
+.field{display:block;margin:8px 0}
+.field>span{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600}
+.field input[type=text],.field textarea,.field select{width:100%;border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.field textarea{resize:vertical;min-height:72px}
+.field input:focus,.field textarea:focus,.field select:focus{outline:2px solid #c6dafc;border-color:var(--primary)}
+.hint{font-size:11px;color:var(--muted);margin:4px 0 8px}
+.btnrow{display:flex;gap:6px;justify-content:flex-end;margin-top:8px}
+.seg{display:flex;gap:4px}
+.seg button{flex:1;padding:5px 4px}
+.seg button.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.slider{display:grid;grid-template-columns:64px 1fr 54px;align-items:center;gap:6px;margin:6px 0}
+.slider label{font-size:12px;color:var(--muted);font-weight:600}
+.slider input[type=range]{width:100%}
+.slider output{font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+.colors{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0}
+.colors label{display:flex;flex-direction:column;align-items:center;font-size:12px;color:var(--muted);font-weight:600;gap:3px}
+.colors input[type=color]{width:100%;height:30px;border:1px solid var(--line);border-radius:6px;padding:2px;background:#fff;cursor:pointer}
+.subhead{font-size:12px;font-weight:700;margin:12px 0 4px;padding-top:8px;border-top:1px solid var(--line)}
+.inline{display:flex;gap:6px;align-items:center}
+.inline select{flex:1;border:1px solid var(--line);border-radius:6px;padding:5px 6px}
+aside#panel{width:320px;display:flex;flex-direction:column;gap:10px;min-height:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}
+.card h2{font-size:14px;margin:0 0 8px;display:flex;align-items:center;justify-content:space-between}
+.card h2 small{font-weight:400;color:var(--muted);font-size:12px}
+.mapinfo{font-size:12px;color:var(--muted);margin-top:6px;word-break:break-all}
+.grid2{display:grid;grid-template-columns:76px 1fr;gap:6px 8px;align-items:center;margin-top:8px;font-size:12px}
+.grid2>span{color:var(--muted);font-weight:600}
+.grid2 select{border:1px solid var(--line);border-radius:6px;padding:4px 6px;width:100%}
+.wide{width:100%;padding:8px 10px;font-size:14px}
+.listcard{flex:1;display:flex;flex-direction:column;min-height:140px}
+#markerList{list-style:none;margin:0;padding:0;overflow:auto;flex:1}
+#markerList li{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid transparent;border-radius:8px;cursor:pointer;margin-bottom:4px;background:#f7f8fa}
+#markerList li:hover{background:#eef2f7}
+#markerList li.sel{border-color:var(--primary);background:#e8f0fe}
+#markerList .badge{flex:0 0 26px;height:26px;display:flex;align-items:center;justify-content:center}
+#markerList .txt{flex:1;min-width:0}
+#markerList .lbl{font-weight:600;font-size:13px;word-break:break-all}
+#markerList .note{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#markerList .del{border:none;background:none;color:#a0a7b1;padding:2px 6px;font-size:14px}
+#markerList .del:hover{color:var(--danger);background:#fdecea}
+.emptylist{color:var(--muted);font-size:12px;padding:12px 4px;text-align:center}
+.total{border-top:1px solid var(--line);margin-top:8px;padding-top:8px;font-size:13px;color:var(--muted)}
+.total b{color:var(--text);font-size:15px}
+#presetList{list-style:none;margin:0;padding:0;max-height:150px;overflow:auto}
+#presetList li{display:flex;align-items:center;gap:8px;padding:4px 4px;font-size:13px;border-bottom:1px dashed #edf0f4}
+#presetList li .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#presetList li button{padding:2px 8px;font-size:12px}
+#modalWrap{position:fixed;inset:0;background:rgba(20,24,31,.45);display:flex;align-items:center;justify-content:center;z-index:100}
+#modal{background:#fff;border-radius:12px;padding:18px 20px;width:min(440px,92vw);box-shadow:0 10px 40px rgba(0,0,0,.25)}
+#modal h3{margin:0 0 8px;font-size:16px}
+#modal p{margin:0 0 12px;color:#3c4652;line-height:1.6;white-space:pre-wrap}
+#modal input{width:100%;border:1px solid var(--line);border-radius:6px;padding:7px 9px;margin-bottom:12px;font-size:14px}
+#modal .btns{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#202124;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:200}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div>
+      <h1>地圖標記編輯器</h1>
+      <div class="sub">滾輪縮放、拖曳空白處移動地圖；拖曳標記點可移動位置，點一下開啟選單</div>
+    </div>
+    <div class="toolbar">
+      <label>專案名稱 <input id="projName" type="text" placeholder="未命名專案" maxlength="60"></label>
+      <span class="sep"></span>
+      <button id="btnUndo" title="復原（Ctrl+Z）">↶ 復原</button>
+      <button id="btnRedo" title="重做（Ctrl+Y 或 Ctrl+Shift+Z）">↷ 重做</button>
+      <span class="sep"></span>
+      <button id="btnSave" title="下載專案檔 .json（Ctrl+S）">存檔</button>
+      <button id="btnOpen" title="開啟專案檔 .json">開啟專案</button>
+      <button id="btnExport" class="primary" title="依原圖解析度輸出 PNG">匯出 PNG</button>
+      <span class="sep"></span>
+      <button id="btnNew" title="清空地圖與標記點（樣式預設會保留）">新專案</button>
+    </div>
+  </header>
+  <main>
+    <section id="viewport">
+      <div id="stage"><img id="mapImg" alt="" draggable="false" hidden><div id="markerLayer"></div></div>
+      <div id="empty">
+        <div class="big">尚未載入地圖</div>
+        <div>按右側「上傳地圖」，或把圖片檔／專案檔（.json）直接拖曳到這裡</div>
+      </div>
+      <div id="addHint" hidden>點擊地圖放置標記點（Esc 取消）</div>
+      <div id="tooltip" hidden></div>
+      <div id="popup" hidden></div>
+      <div class="zoombar">
+        <button id="zoomOut" title="縮小">－</button>
+        <span id="zoomLabel">100%</span>
+        <button id="zoomIn" title="放大">＋</button>
+        <button id="zoomFit" title="重設檢視，整張地圖符合視窗">重設檢視</button>
+        <button id="zoom100" title="原始大小 100%">1:1</button>
+      </div>
+    </section>
+    <aside id="panel">
+      <div class="card">
+        <h2>地圖</h2>
+        <button id="btnUpload" class="orange wide">⇪ 上傳地圖</button>
+        <div class="mapinfo" id="mapInfo">尚未載入</div>
+      </div>
+      <div class="card">
+        <h2>新增標記點</h2>
+        <button id="btnAdd" class="primary wide">＋ 新增標記點</button>
+        <div class="grid2">
+          <span>新標記樣式</span><select id="newStyle"></select>
+          <span>編號方式</span><select id="labelMode"><option value="num">數字 1, 2, 3…</option><option value="alpha">英文 A, B, C…</option></select>
+          <span>連續新增</span><label style="font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="multiAdd"> 放置後維持新增模式</label>
+        </div>
+      </div>
+      <div class="card listcard">
+        <h2>標記點列表 <small>點選可定位</small></h2>
+        <ul id="markerList"></ul>
+        <div class="total">總標記點數：<b id="total">0</b></div>
+      </div>
+      <div class="card">
+        <h2>樣式預設 <small>在標記的「樣式」中儲存／套用</small></h2>
+        <ul id="presetList"></ul>
+      </div>
+    </aside>
+  </main>
+</div>
+<div id="modalWrap" hidden><div id="modal"></div></div>
+<div id="toast"></div>
+<input type="file" id="fileImg" accept="image/*" hidden>
+<input type="file" id="fileProj" accept=".json,application/json" hidden>
+
+<script>
+'use strict';
+/* ========== 常數 ========== */
+const APP_ID = 'map-marker-editor';
+const LS_KEY = 'mapMarkerEditor.autosave.v1';
+const LS_PRESETS = 'mapMarkerEditor.presets.v1';
+const FONT = '"Microsoft JhengHei UI","Microsoft JhengHei","PingFang TC","Noto Sans CJK TC","Noto Sans TC","Noto Sans CJK SC",Arial,sans-serif';
+const BASE_STYLE = {shape:'square', w:48, h:48, fontSize:18, bg:'#e53935', border:'#ffffff', borderWidth:2, textColor:'#ffffff', opacity:1};
+const DEFAULT_PRESETS = [
+  {id:'p_abnormal', name:'異常點', style:{shape:'circle', w:44, h:44, fontSize:18, bg:'#d32f2f', border:'#ffffff', borderWidth:3, textColor:'#ffffff', opacity:1}},
+  {id:'p_sample',   name:'採樣點', style:{shape:'pin', w:40, h:56, fontSize:16, bg:'#1565c0', border:'#ffffff', borderWidth:2, textColor:'#ffffff', opacity:1}}
+];
+const SHAPES = [['square','方形'],['circle','圓形'],['pin','水滴圖釘']];
+
+/* ========== 狀態 ========== */
+const S = {
+  image: null,          // {name, dataURL, w, h}
+  markers: [],          // {id, x, y, label, note, style}
+  presets: clone(DEFAULT_PRESETS),
+  counter: 1,
+  sizeFactor: 1,
+  labelMode: 'num',
+  newStyle: '__base',
+  projName: ''
+};
+const V = {s:1, tx:0, ty:0};
+let sel = null;           // 選取中的標記 id
+let popTab = 'menu';      // menu | edit | style
+let addMode = false;
+let hist = [], hi = -1;
+
+const $ = q => document.querySelector(q);
+const vp = $('#viewport'), stage = $('#stage'), img = $('#mapImg'), layer = $('#markerLayer');
+const popup = $('#popup'), tooltip = $('#tooltip');
+
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function uid(){ return 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+function color(c, d){ return /^#[0-9a-f]{3,8}$/i.test(String(c||'')) ? c : d; }
+function findM(id){ return S.markers.find(m => m.id === id); }
+
+function toast(msg, ms=2200){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+/* ========== 樣式工具 ========== */
+function normStyle(st){
+  const b = BASE_STYLE, o = Object.assign({}, b, st || {});
+  o.shape = ['square','circle','pin'].includes(o.shape) ? o.shape : 'square';
+  o.w = clamp(+o.w || b.w, 4, 5000); o.h = clamp(+o.h || b.h, 4, 5000);
+  o.fontSize = clamp(+o.fontSize || b.fontSize, 4, 2000);
+  o.borderWidth = clamp(isFinite(+o.borderWidth) ? +o.borderWidth : b.borderWidth, 0, 500);
+  o.opacity = clamp(isFinite(+o.opacity) ? +o.opacity : 1, 0.05, 1);
+  o.bg = color(o.bg, b.bg); o.border = color(o.border, b.border); o.textColor = color(o.textColor, b.textColor);
+  if (o.shape === 'pin' && o.h < o.w * 1.2) o.h = Math.round(o.w * 1.3);
+  return o;
+}
+const SIZE_KEYS = ['w','h','fontSize','borderWidth'];
+function scaleStyle(st, f){
+  const o = Object.assign({}, st);
+  SIZE_KEYS.forEach(k => { o[k] = k === 'borderWidth' ? Math.round(o[k]*f*2)/2 : Math.round(o[k]*f); });
+  return normStyle(o);
+}
+function calcFactor(w, h){ const L = Math.max(w, h); return L <= 2000 ? 1 : Math.round(L/1600*2)/2; }
+function styleForNew(){
+  const p = S.presets.find(p => p.id === S.newStyle);
+  return scaleStyle(p ? p.style : BASE_STYLE, S.sizeFactor);
+}
+
+// 形狀路徑（SVG 與 Canvas 共用，確保匯出結果一致）
+function shapePath(st){
+  const w = st.w, h = st.h, i = st.borderWidth/2;
+  if (st.shape === 'circle'){
+    const rx = Math.max(0.5, w/2 - i), ry = Math.max(0.5, h/2 - i), cx = w/2, cy = h/2;
+    return `M${cx-rx},${cy}A${rx},${ry} 0 1,0 ${cx+rx},${cy}A${rx},${ry} 0 1,0 ${cx-rx},${cy}Z`;
+  }
+  if (st.shape === 'pin'){
+    const r = Math.max(0.5, w/2 - i), cx = w/2, cy = w/2, tipY = h - i;
+    const d = Math.max(tipY - cy, r * 1.05);
+    const a = Math.acos(r/d), sx = r*Math.sin(a), sy = r*Math.cos(a);
+    return `M${cx},${cy+d}L${cx-sx},${cy+sy}A${r},${r} 0 1,1 ${cx+sx},${cy+sy}Z`;
+  }
+  const x0 = i, y0 = i, x1 = w - i, y1 = h - i;
+  const rr = Math.max(0, Math.min((x1-x0), (y1-y0)) * 0.14);
+  return `M${x0+rr},${y0}H${x1-rr}A${rr},${rr} 0 0,1 ${x1},${y0+rr}V${y1-rr}A${rr},${rr} 0 0,1 ${x1-rr},${y1}H${x0+rr}A${rr},${rr} 0 0,1 ${x0},${y1-rr}V${y0+rr}A${rr},${rr} 0 0,1 ${x0+rr},${y0}Z`;
+}
+function textPos(st){ return st.shape === 'pin' ? {x: st.w/2, y: st.w/2} : {x: st.w/2, y: st.h/2}; }
+function markerBox(m){ const st = m.style; return {L: m.x - st.w/2, T: st.shape === 'pin' ? m.y - st.h : m.y - st.h/2}; }
+
+function shapeSVG(st, label, w, h){
+  const tp = textPos(st);
+  const stroke = st.borderWidth > 0 ? `stroke="${st.border}" stroke-width="${st.borderWidth}"` : 'stroke="none"';
+  return `<svg width="${w ?? st.w}" height="${h ?? st.h}" viewBox="0 0 ${st.w} ${st.h}"><path d="${shapePath(st)}" fill="${st.bg}" ${stroke} stroke-linejoin="round"/>` +
+    (label != null ? `<text x="${tp.x}" y="${tp.y}" font-size="${st.fontSize}" fill="${st.textColor}" text-anchor="middle" dominant-baseline="central">${esc(label)}</text>` : '') + `</svg>`;
+}
+function badgeSVG(st){
+  const k = 24 / Math.max(st.w, st.h);
+  return shapeSVG(st, null, Math.max(6, st.w*k), Math.max(6, st.h*k));
+}
+
+/* ========== 標籤編號 ========== */
+function fmtLabel(n){
+  if (S.labelMode === 'alpha'){ let s = ''; while (n > 0){ n--; s = String.fromCharCode(65 + n % 26) + s; n = Math.floor(n/26); } return s; }
+  return String(n);
+}
+
+/* ========== 繪製 ========== */
+function markerHTML(m){
+  const st = m.style, b = markerBox(m);
+  return `<div class="marker${m.id === sel ? ' sel' : ''}" data-id="${m.id}" style="transform:translate(${b.L}px,${b.T}px);width:${st.w}px;height:${st.h}px;opacity:${st.opacity}">${shapeSVG(st, m.label)}</div>`;
+}
+function renderMarkers(){ layer.innerHTML = S.markers.map(markerHTML).join(''); }
+function markerEl(id){ return layer.querySelector(`.marker[data-id="${id}"]`); }
+function updateMarkerEl(m){ const el = markerEl(m.id); if (el) el.outerHTML = markerHTML(m); else renderMarkers(); }
+
+function renderList(){
+  const ul = $('#markerList');
+  if (!S.markers.length){ ul.innerHTML = `<li class="emptylist" style="cursor:default;background:none">${S.image ? '尚無標記點，按「＋ 新增標記點」後點地圖放置' : '請先上傳地圖'}</li>`; }
+  else ul.innerHTML = S.markers.map(m => {
+    const first = (m.note || '').split('\n')[0];
+    return `<li data-id="${m.id}" class="${m.id === sel ? 'sel' : ''}" title="${esc(m.note ? m.label + '\n' + m.note : m.label)}">
+      <span class="badge">${badgeSVG(m.style)}</span>
+      <div class="txt"><div class="lbl">${esc(m.label) || '<span style="color:#aaa">（無文字）</span>'}</div>${first ? `<div class="note">${esc(first)}${m.note.includes('\n') ? '…' : ''}</div>` : ''}</div>
+      <button class="del" data-del="${m.id}" title="刪除">✕</button></li>`;
+  }).join('');
+  $('#total').textContent = S.markers.length;
+}
+function renderPresets(){
+  $('#presetList').innerHTML = S.presets.length ? S.presets.map(p =>
+    `<li><span class="badge" style="width:26px;display:flex;justify-content:center">${badgeSVG(p.style)}</span><span class="nm">${esc(p.name)}</span><button class="danger" data-delpreset="${p.id}">刪除</button></li>`
+  ).join('') : '<li style="color:var(--muted);font-size:12px">尚無預設</li>';
+  const ns = $('#newStyle');
+  ns.innerHTML = `<option value="__base">基本（紅色方形）</option>` + S.presets.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  if (!S.presets.some(p => p.id === S.newStyle)) S.newStyle = '__base';
+  ns.value = S.newStyle;
+}
+function renderView(){
+  stage.style.transform = `translate(${V.tx}px,${V.ty}px) scale(${V.s})`;
+  stage.style.setProperty('--inv', 1 / V.s);
+  $('#zoomLabel').textContent = Math.round(V.s * 100) + '%';
+  positionPopup();
+}
+function renderUI(){
+  const has = !!S.image;
+  $('#empty').hidden = has; img.hidden = !has;
+  $('#btnAdd').disabled = !has; $('#btnExport').disabled = !has;
+  $('#mapInfo').textContent = has ? `${S.image.name || '地圖'}（${S.image.w} × ${S.image.h} px）` : '尚未載入';
+  $('#btnUndo').disabled = hi <= 0; $('#btnRedo').disabled = hi >= hist.length - 1;
+  $('#labelMode').value = S.labelMode;
+  if ($('#projName').value !== S.projName) $('#projName').value = S.projName;
+  if (!has && addMode) setAddMode(false);
+}
+function renderAll(){ renderMarkers(); renderList(); renderPresets(); renderUI(); renderView(); }
+
+function setImageSrc(){
+  return new Promise(res => {
+    if (!S.image){ img.removeAttribute('src'); return res(); }
+    if (img.getAttribute('src') === S.image.dataURL) return res();
+    img.onload = () => res(); img.onerror = () => res();
+    img.src = S.image.dataURL; img.width = S.image.w; img.height = S.image.h;
+    layer.style.width = S.image.w + 'px'; layer.style.height = S.image.h + 'px';
+  });
+}
+
+/* ========== 檢視：縮放／平移 ========== */
+function fitView(){
+  if (!S.image) { V.s = 1; V.tx = 0; V.ty = 0; renderView(); return; }
+  const r = vp.getBoundingClientRect(), pad = 20;
+  V.s = clamp(Math.min((r.width - pad*2) / S.image.w, (r.height - pad*2) / S.image.h), 0.02, 20);
+  V.tx = (r.width - S.image.w * V.s) / 2; V.ty = (r.height - S.image.h * V.s) / 2;
+  renderView();
+}
+function zoomAt(px, py, k){
+  const ns = clamp(V.s * k, 0.02, 20); k = ns / V.s;
+  V.tx = px - (px - V.tx) * k; V.ty = py - (py - V.ty) * k; V.s = ns; renderView();
+}
+function zoomCenter(k){ const r = vp.getBoundingClientRect(); zoomAt(r.width/2, r.height/2, k); }
+function toImg(cx, cy){ const r = vp.getBoundingClientRect(); return {x: (cx - r.left - V.tx) / V.s, y: (cy - r.top - V.ty) / V.s}; }
+function centerOn(m){
+  const r = vp.getBoundingClientRect();
+  V.tx = r.width/2 - m.x * V.s; V.ty = r.height/2 - (m.y - (m.style.shape === 'pin' ? m.style.h/2 : 0)) * V.s; renderView();
+}
+
+/* ========== 歷程（復原／重做） ========== */
+function snap(){ return {image: S.image, markers: clone(S.markers), presets: clone(S.presets), counter: S.counter, sizeFactor: S.sizeFactor}; }
+function resetHistory(){ hist = [snap()]; hi = 0; renderUI(); }
+function commit(){
+  hist = hist.slice(0, hi + 1); hist.push(snap());
+  if (hist.length > 200) hist.shift();
+  hi = hist.length - 1; renderUI(); scheduleAutosave(); savePresetsLocal();
+}
+async function restore(h){
+  const imgChanged = h.image !== S.image;
+  S.image = h.image; S.markers = clone(h.markers); S.presets = clone(h.presets); S.counter = h.counter; S.sizeFactor = h.sizeFactor;
+  if (sel && !findM(sel)) sel = null;
+  closePopup(true);
+  await setImageSrc();
+  renderAll(); if (imgChanged) fitView();
+  scheduleAutosave(); savePresetsLocal();
+}
+function undo(){ if (hi <= 0) return; hi--; restore(hist[hi]); toast('已復原'); }
+function redo(){ if (hi >= hist.length - 1) return; hi++; restore(hist[hi]); toast('已重做'); }
+
+/* ========== 標記操作 ========== */
+function addMarkerAt(x, y){
+  const m = {id: uid(), x: Math.round(x), y: Math.round(y), label: fmtLabel(S.counter), note: '', style: styleForNew()};
+  S.counter++;
+  S.markers.push(m); sel = m.id;
+  renderMarkers(); renderList(); commit();
+  if (!$('#multiAdd').checked) setAddMode(false);
+  return m;
+}
+function deleteMarker(id){
+  const m = findM(id); if (!m) return;
+  S.markers = S.markers.filter(x => x.id !== id);
+  if (sel === id){ sel = null; closePopup(true); }
+  renderMarkers(); renderList(); commit();
+  toast(`已刪除「${m.label}」，可按 Ctrl+Z 復原`);
+}
+function select(id, open){
+  sel = id;
+  layer.querySelectorAll('.marker.sel').forEach(e => e.classList.remove('sel'));
+  const el = id && markerEl(id); if (el) el.classList.add('sel');
+  document.querySelectorAll('#markerList li').forEach(li => li.classList.toggle('sel', li.dataset.id === id));
+  if (id && open){ popTab = 'menu'; renderPopup(); } else if (!id) closePopup(true);
+}
+function setAddMode(on){
+  addMode = !!on && !!S.image;
+  vp.classList.toggle('adding', addMode);
+  $('#addHint').hidden = !addMode;
+  const b = $('#btnAdd'); b.classList.toggle('armed', addMode); b.classList.toggle('primary', !addMode);
+  b.textContent = addMode ? '✓ 點地圖放置中…（再按一次取消）' : '＋ 新增標記點';
+  if (addMode) closePopup();
+}
+
+/* ========== 彈出選單 ========== */
+let editOrig = null;
+function closePopup(keepSel){ popup.hidden = true; popup.innerHTML = ''; popTab = 'menu'; if (!keepSel){ /* 保留選取 */ } }
+function renderPopup(){
+  const m = findM(sel); if (!m){ closePopup(); return; }
+  const tab = popTab;
+  let body = '';
+  if (tab === 'menu'){
+    body = `<div class="pop-info">位置：(${Math.round(m.x)}, ${Math.round(m.y)}) px${m.note ? `<br>備註：${esc(m.note.length > 60 ? m.note.slice(0,60) + '…' : m.note).replace(/\n/g,'<br>')}` : ''}</div>`;
+  } else if (tab === 'edit'){
+    body = `<div class="pop-body">
+      <label class="field"><span>標籤文字</span><input type="text" id="edLabel" maxlength="40" value="${esc(m.label)}"></label>
+      <label class="field"><span>備註</span><textarea id="edNote" rows="4" placeholder="例如：餘氯偏低 0.1 mg/L、2026/10/22 採樣">${esc(m.note)}</textarea></label>
+      <div class="hint">Enter 確認、Esc 取消；備註內 Enter 換行，Ctrl+Enter 確認</div>
+      <div class="btnrow"><button id="edCancel">取消</button><button id="edOk" class="primary">✓ 確定</button></div></div>`;
+  } else if (tab === 'style'){
+    const st = m.style, f = S.sizeFactor;
+    const mx = v => Math.max(v * f, 10);
+    const sl = (k, label, min, max, step, unit) => `<div class="slider"><label for="st_${k}">${label}</label><input type="range" id="st_${k}" data-k="${k}" min="${min}" max="${Math.max(max, st[k])}" step="${step}" value="${st[k]}"><output id="o_${k}">${st[k]}${unit}</output></div>`;
+    body = `<div class="pop-body">
+      <div class="field"><span>形狀</span><div class="seg">${SHAPES.map(([v,t]) => `<button data-shape="${v}" class="${st.shape === v ? 'on' : ''}">${t}</button>`).join('')}</div></div>
+      ${sl('w','寬度',8,mx(300),1,'px')}
+      ${sl('h','高度',8,mx(300),1,'px')}
+      ${sl('fontSize','字體大小',6,mx(120),1,'px')}
+      ${sl('borderWidth','邊框粗細',0,mx(16),0.5,'px')}
+      <div class="slider"><label for="st_opacity">透明度</label><input type="range" id="st_opacity" data-k="opacity" min="10" max="100" step="5" value="${Math.round(st.opacity*100)}"><output id="o_opacity">${Math.round(st.opacity*100)}%</output></div>
+      <div class="colors">
+        <label>背景色<input type="color" data-c="bg" value="${toHex6(st.bg)}"></label>
+        <label>邊框色<input type="color" data-c="border" value="${toHex6(st.border)}"></label>
+        <label>文字顏色<input type="color" data-c="textColor" value="${toHex6(st.textColor)}"></label>
+      </div>
+      <div class="subhead">樣式預設</div>
+      <div class="inline"><select id="presetSel">${S.presets.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('') || '<option value="">（尚無預設）</option>'}</select><button id="presetApply" ${S.presets.length ? '' : 'disabled'}>套用</button></div>
+      <div class="btnrow" style="justify-content:space-between"><button id="presetSave">將目前樣式存成預設…</button><button id="styleDone" class="primary">完成</button></div></div>`;
+  }
+  popup.innerHTML = `<div class="pop-head"><span class="pop-title">標記點：${esc(m.label) || '（無文字）'}</span><button class="pop-close" id="popClose" title="關閉（Esc）">×</button></div>
+    <div class="pop-tabs"><button data-tab="edit" class="${tab === 'edit' ? 'on' : ''}">✎ 編輯</button><button data-tab="style" class="${tab === 'style' ? 'on' : ''}">◐ 樣式</button><button data-tab="delete" class="danger">🗑 刪除</button></div>${body}`;
+  popup.hidden = false;
+  positionPopup();
+  if (tab === 'edit'){
+    editOrig = {label: m.label, note: m.note};
+    const inp = $('#edLabel'); inp.focus(); inp.select();
+  }
+}
+function toHex6(c){ c = String(c); if (/^#[0-9a-f]{3}$/i.test(c)) return '#' + c.slice(1).split('').map(x => x + x).join(''); return c.slice(0, 7); }
+function positionPopup(){
+  if (popup.hidden) return;
+  const m = findM(sel); if (!m) return;
+  const r = vp.getBoundingClientRect(), b = markerBox(m);
+  const L = b.L * V.s + V.tx, T = b.T * V.s + V.ty, W = m.style.w * V.s;
+  const pw = popup.offsetWidth, ph = popup.offsetHeight;
+  let x = L + W + 12; if (x + pw > r.width - 8) x = L - pw - 12; x = clamp(x, 8, Math.max(8, r.width - pw - 8));
+  let y = clamp(T, 8, Math.max(8, r.height - ph - 8));
+  popup.style.left = x + 'px'; popup.style.top = y + 'px';
+}
+function confirmEdit(){
+  const m = findM(sel); if (!m) return;
+  const label = $('#edLabel').value.trim(), note = $('#edNote').value.replace(/\s+$/, '');
+  if (label !== m.label || note !== m.note){ m.label = label; m.note = note; updateMarkerEl(m); renderList(); commit(); toast('已更新標記點'); }
+  closePopup(true);
+}
+popup.addEventListener('click', async e => {
+  const m = findM(sel); if (!m) return;
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.id === 'popClose'){ closePopup(true); return; }
+  if (t.dataset.tab){
+    if (t.dataset.tab === 'delete'){ deleteMarker(m.id); return; }
+    popTab = popTab === t.dataset.tab ? 'menu' : t.dataset.tab; renderPopup(); return;
+  }
+  if (t.id === 'edOk'){ confirmEdit(); return; }
+  if (t.id === 'edCancel'){ popTab = 'menu'; renderPopup(); return; }
+  if (t.dataset.shape){
+    m.style.shape = t.dataset.shape; m.style = normStyle(m.style);
+    updateMarkerEl(m); renderList(); commit(); renderPopup(); return;
+  }
+  if (t.id === 'styleDone'){ closePopup(true); return; }
+  if (t.id === 'presetApply'){
+    const p = S.presets.find(p => p.id === $('#presetSel').value); if (!p) return;
+    m.style = scaleStyle(p.style, S.sizeFactor); updateMarkerEl(m); renderList(); commit(); renderPopup(); toast(`已套用「${p.name}」`); return;
+  }
+  if (t.id === 'presetSave'){
+    const name = await modal({title:'儲存樣式預設', text:'輸入預設名稱（同名會覆蓋）：', input: '', placeholder:'例如：異常點、採樣點、加壓站', buttons:[{id:'cancel', label:'取消'}, {id:'ok', label:'儲存', cls:'primary', primary:true}]});
+    if (!name || name.id !== 'ok' || !name.value.trim()) return;
+    const nm = name.value.trim();
+    const st = scaleStyle(m.style, 1 / S.sizeFactor);
+    const ex = S.presets.find(p => p.name === nm);
+    if (ex) ex.style = st; else S.presets.push({id: 'p' + uid(), name: nm, style: st});
+    renderPresets(); commit(); renderPopup(); toast(ex ? `已更新預設「${nm}」` : `已新增預設「${nm}」`); return;
+  }
+});
+popup.addEventListener('input', e => {
+  const m = findM(sel); if (!m) return;
+  const t = e.target;
+  if (t.dataset.k){
+    const k = t.dataset.k; let v = +t.value;
+    if (k === 'opacity'){ m.style.opacity = v / 100; $('#o_opacity').textContent = v + '%'; }
+    else {
+      m.style[k] = v;
+      if (m.style.shape === 'pin' && (k === 'w' || k === 'h') && m.style.h < m.style.w * 1.2){
+        m.style.h = Math.round(m.style.w * 1.2);
+        const hs = $('#st_h'); if (+hs.max < m.style.h) hs.max = m.style.h; hs.value = m.style.h; $('#o_h').textContent = m.style.h + 'px';
+      }
+      $('#o_' + k).textContent = v + 'px';
+    }
+    updateMarkerEl(m); positionPopup();
+  } else if (t.dataset.c){ m.style[t.dataset.c] = t.value; updateMarkerEl(m); }
+});
+popup.addEventListener('change', e => {
+  const m = findM(sel); if (!m) return;
+  if (e.target.dataset.k || e.target.dataset.c){ renderList(); commit(); }
+});
+popup.addEventListener('keydown', e => {
+  if (popTab !== 'edit') { if (e.key === 'Escape'){ e.stopPropagation(); closePopup(true); } return; }
+  if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); popTab = 'menu'; renderPopup(); toast('已取消編輯'); return; }
+  if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229){
+    if (e.target.id === 'edLabel' || (e.target.id === 'edNote' && (e.ctrlKey || e.metaKey))){ e.preventDefault(); e.stopPropagation(); confirmEdit(); }
+  }
+});
+
+/* ========== 滑鼠互動 ========== */
+let drag = null;
+vp.addEventListener('pointerdown', e => {
+  if (e.target.closest('#popup,.zoombar')) return;
+  if (e.button !== 0 && e.button !== 1) return;
+  hideTip();
+  const mEl = e.target.closest('.marker');
+  if (mEl && e.button === 0){
+    const m = findM(mEl.dataset.id);
+    drag = {type:'marker', m, el: mEl, sx: e.clientX, sy: e.clientY, ox: m.x, oy: m.y, moved:false};
+  } else {
+    drag = {type:'pan', sx: e.clientX, sy: e.clientY, tx: V.tx, ty: V.ty, moved:false};
+  }
+  vp.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+vp.addEventListener('pointermove', e => {
+  if (!drag){ return; }
+  const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
+  if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+  drag.moved = true;
+  if (drag.type === 'marker'){
+    const m = drag.m; m.x = Math.round(drag.ox + dx / V.s); m.y = Math.round(drag.oy + dy / V.s);
+    const b = markerBox(m); drag.el.style.transform = `translate(${b.L}px,${b.T}px)`;
+    if (sel === m.id) positionPopup();
+  } else {
+    vp.classList.add('panning'); V.tx = drag.tx + dx; V.ty = drag.ty + dy; renderView();
+  }
+});
+vp.addEventListener('pointerup', e => {
+  if (!drag) return;
+  const d = drag; drag = null; vp.classList.remove('panning');
+  if (d.type === 'marker'){
+    if (d.moved){ commit(); select(d.m.id, false); if (!popup.hidden) positionPopup(); }
+    else { if (sel === d.m.id && !popup.hidden) closePopup(true); else select(d.m.id, true); }
+  } else if (!d.moved){
+    if (addMode && S.image){ const p = toImg(e.clientX, e.clientY); addMarkerAt(p.x, p.y); }
+    else { select(null); }
+  }
+});
+vp.addEventListener('pointercancel', () => { if (drag && drag.type === 'marker' && drag.moved) commit(); drag = null; vp.classList.remove('panning'); });
+vp.addEventListener('wheel', e => {
+  if (e.target.closest('#popup')) return;
+  e.preventDefault();
+  const r = vp.getBoundingClientRect();
+  const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+  zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-dy * 0.0015));
+}, {passive:false});
+
+// 滑過顯示備註
+function hideTip(){ tooltip.hidden = true; }
+vp.addEventListener('mousemove', e => {
+  if (drag){ hideTip(); return; }
+  const mEl = e.target.closest('.marker');
+  if (!mEl){ hideTip(); return; }
+  const m = findM(mEl.dataset.id); if (!m){ hideTip(); return; }
+  tooltip.innerHTML = `<b>${esc(m.label) || '（無文字）'}</b>${m.note ? esc(m.note) : '<span style="opacity:.7">（無備註）</span>'}`;
+  tooltip.hidden = false;
+  const r = vp.getBoundingClientRect();
+  let x = e.clientX - r.left + 14, y = e.clientY - r.top + 14;
+  if (x + tooltip.offsetWidth > r.width - 6) x = e.clientX - r.left - tooltip.offsetWidth - 10;
+  if (y + tooltip.offsetHeight > r.height - 6) y = e.clientY - r.top - tooltip.offsetHeight - 10;
+  tooltip.style.left = x + 'px'; tooltip.style.top = y + 'px';
+});
+vp.addEventListener('mouseleave', hideTip);
+
+// 拖放檔案
+vp.addEventListener('dragover', e => { e.preventDefault(); vp.classList.add('dragover'); });
+vp.addEventListener('dragleave', () => vp.classList.remove('dragover'));
+vp.addEventListener('drop', e => {
+  e.preventDefault(); vp.classList.remove('dragover');
+  const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (!f) return;
+  if (/\.json$/i.test(f.name) || f.type === 'application/json') openProjectFile(f);
+  else if (f.type.startsWith('image/')) loadImageFile(f);
+  else toast('不支援的檔案類型');
+});
+
+/* ========== 列表 ========== */
+$('#markerList').addEventListener('click', e => {
+  const del = e.target.closest('[data-del]');
+  if (del){ e.stopPropagation(); deleteMarker(del.dataset.del); return; }
+  const li = e.target.closest('li[data-id]'); if (!li) return;
+  const m = findM(li.dataset.id); if (!m) return;
+  setAddMode(false);
+  centerOn(m); select(m.id, true);
+});
+$('#presetList').addEventListener('click', e => {
+  const b = e.target.closest('[data-delpreset]'); if (!b) return;
+  const p = S.presets.find(p => p.id === b.dataset.delpreset); if (!p) return;
+  S.presets = S.presets.filter(x => x !== p); renderPresets(); commit();
+  if (!popup.hidden && popTab === 'style') renderPopup();
+  toast(`已刪除預設「${p.name}」，可按 Ctrl+Z 復原`);
+});
+
+/* ========== 對話框 ========== */
+function modal({title, text, input, placeholder, buttons}){
+  return new Promise(res => {
+    const wrap = $('#modalWrap'), box = $('#modal');
+    box.innerHTML = `<h3>${esc(title)}</h3>${text ? `<p>${esc(text)}</p>` : ''}${input != null ? `<input type="text" id="mdInput" value="${esc(input)}" placeholder="${esc(placeholder || '')}" maxlength="40">` : ''}
+      <div class="btns">${buttons.map(b => `<button data-id="${b.id}" class="${b.cls || ''}">${esc(b.label)}</button>`).join('')}</div>`;
+    wrap.hidden = false;
+    const done = id => { wrap.hidden = true; document.removeEventListener('keydown', onKey, true); const inp = $('#mdInput'); res(id ? {id, value: inp ? inp.value : ''} : null); };
+    const onKey = e => {
+      if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); done(null); }
+      else if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229){ const p = buttons.find(b => b.primary); if (p){ e.preventDefault(); e.stopPropagation(); done(p.id); } }
+    };
+    document.addEventListener('keydown', onKey, true);
+    box.querySelectorAll('button').forEach(b => b.onclick = () => done(b.dataset.id));
+    const inp = $('#mdInput'); if (inp){ inp.focus(); inp.select(); } else { const p = box.querySelector('button.primary'); if (p) p.focus(); }
+  });
+}
+
+/* ========== 檔案：地圖 ========== */
+function readAs(file, how){ return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r[how](file); }); }
+function loadImg(src){ return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
+async function loadImageFile(file){
+  let dataURL, im;
+  try { dataURL = await readAs(file, 'readAsDataURL'); im = await loadImg(dataURL); }
+  catch(err){ toast('無法讀取這張圖片'); return; }
+  const nw = im.naturalWidth, nh = im.naturalHeight;
+  if (S.image && S.markers.length){
+    const r = await modal({title:'更換地圖', text:`目前有 ${S.markers.length} 個標記點。更換地圖後要如何處理？\n\n．保留：標記點依比例對應到新地圖的相同相對位置\n．清除：移除全部標記點，從頭開始`,
+      buttons:[{id:'cancel', label:'取消'}, {id:'clear', label:'清除標記點', cls:'danger'}, {id:'keep', label:'保留標記點', cls:'primary', primary:true}]});
+    if (!r || r.id === 'cancel') return;
+    if (r.id === 'keep'){
+      const kx = nw / S.image.w, ky = nh / S.image.h, ks = (kx + ky) / 2;
+      S.markers.forEach(m => { m.x = Math.round(m.x * kx); m.y = Math.round(m.y * ky); if (Math.abs(ks - 1) > 0.01) m.style = scaleStyle(m.style, ks); });
+    } else { S.markers = []; S.counter = 1; sel = null; }
+  }
+  closePopup(true);
+  S.image = {name: file.name, dataURL, w: nw, h: nh};
+  S.sizeFactor = calcFactor(nw, nh);
+  if (!S.projName) S.projName = file.name.replace(/\.[^.]+$/, '');
+  await setImageSrc(); renderAll(); fitView(); commit();
+  toast(`已載入地圖（${nw} × ${nh} px）`);
+}
+$('#btnUpload').onclick = () => $('#fileImg').click();
+$('#fileImg').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) loadImageFile(f); };
+
+/* ========== 專案存檔／開檔 ========== */
+function serialize(){
+  return {app: APP_ID, version: 1, savedAt: new Date().toISOString(), projName: S.projName,
+    image: S.image, markers: S.markers, presets: S.presets,
+    settings: {counter: S.counter, sizeFactor: S.sizeFactor, labelMode: S.labelMode, newStyle: S.newStyle}};
+}
+function baseName(){
+  const n = (S.projName || (S.image && S.image.name.replace(/\.[^.]+$/, '')) || '地圖標記').replace(/[\\/:*?"<>|]+/g, '_').trim() || '地圖標記';
+  const d = new Date(), p = x => String(x).padStart(2, '0');
+  return `${n}_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+function download(blob, name){
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function saveProject(){
+  if (!S.image && !S.markers.length){ toast('目前沒有內容可存檔'); return; }
+  const name = baseName() + '.json';
+  download(new Blob([JSON.stringify(serialize())], {type:'application/json'}), name);
+  toast(`已下載專案檔：${name}`);
+}
+function applyProject(d){
+  if (!d || typeof d !== 'object' || !Array.isArray(d.markers)) throw new Error('格式不符');
+  const st = d.settings || {};
+  S.image = d.image && d.image.dataURL ? {name: d.image.name || '地圖', dataURL: d.image.dataURL, w: +d.image.w, h: +d.image.h} : null;
+  S.markers = d.markers.filter(m => m && isFinite(+m.x) && isFinite(+m.y)).map(m => ({id: String(m.id || uid()), x: +m.x, y: +m.y, label: String(m.label ?? ''), note: String(m.note ?? ''), style: normStyle(m.style)}));
+  if (Array.isArray(d.presets)){
+    const merged = clone(S.presets);
+    d.presets.forEach(p => { if (!p || !p.name) return; const ex = merged.find(x => x.name === p.name); const s = normStyle(p.style); if (ex) ex.style = s; else merged.push({id: String(p.id || 'p' + uid()), name: String(p.name), style: s}); });
+    S.presets = merged;
+  }
+  S.counter = +st.counter || (S.markers.length + 1);
+  S.sizeFactor = +st.sizeFactor || (S.image ? calcFactor(S.image.w, S.image.h) : 1);
+  S.labelMode = st.labelMode === 'alpha' ? 'alpha' : 'num';
+  S.newStyle = st.newStyle || '__base';
+  S.projName = String(d.projName || '');
+  sel = null;
+}
+async function openProjectFile(file){
+  let d;
+  try { d = JSON.parse(await readAs(file, 'readAsText')); if (!Array.isArray(d.markers)) throw 0; }
+  catch(err){ toast('無法開啟：不是有效的地圖標記專案檔'); return; }
+  if (S.image || S.markers.length){
+    const r = await modal({title:'開啟專案', text:`開啟「${file.name}」會取代目前的地圖與標記點。\n如需保留目前內容，請先按「存檔」。`, buttons:[{id:'cancel', label:'取消'}, {id:'ok', label:'開啟', cls:'primary', primary:true}]});
+    if (!r || r.id !== 'ok') return;
+  }
+  try { applyProject(d); } catch(err){ toast('專案檔內容有誤，無法開啟'); return; }
+  if (S.image && (!S.image.w || !S.image.h)){ try { const im = await loadImg(S.image.dataURL); S.image.w = im.naturalWidth; S.image.h = im.naturalHeight; } catch(e){ S.image = null; } }
+  closePopup(true); setAddMode(false);
+  await setImageSrc(); renderAll(); fitView(); resetHistory(); scheduleAutosave(); savePresetsLocal();
+  toast(`已開啟專案（${S.markers.length} 個標記點）`);
+}
+$('#btnSave').onclick = saveProject;
+$('#btnOpen').onclick = () => $('#fileProj').click();
+$('#fileProj').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) openProjectFile(f); };
+$('#btnNew').onclick = async () => {
+  if (S.image || S.markers.length){
+    const r = await modal({title:'新專案', text:'要清空目前的地圖與所有標記點嗎？\n（樣式預設會保留；如需保留目前內容，請先存檔）', buttons:[{id:'cancel', label:'取消'}, {id:'ok', label:'清空', cls:'danger-fill', primary:true}]});
+    if (!r || r.id !== 'ok') return;
+  }
+  S.image = null; S.markers = []; S.counter = 1; S.sizeFactor = 1; S.projName = ''; sel = null;
+  closePopup(true); setAddMode(false); await setImageSrc(); renderAll(); fitView(); commit();
+};
+
+/* ========== 匯出 PNG ========== */
+function drawMarker(ctx, m){
+  const st = m.style, b = markerBox(m), tp = textPos(st);
+  const font = `700 ${st.fontSize}px ${FONT}`;
+  ctx.save(); ctx.font = font; const tw = ctx.measureText(m.label || '').width; ctx.restore();
+  const padX = Math.ceil(st.borderWidth) + 2 + Math.max(0, Math.ceil((tw - st.w) / 2)), padY = Math.ceil(st.borderWidth) + 2 + Math.ceil(st.fontSize);
+  const L = b.L - padX, T = b.T - padY, Li = Math.floor(L), Ti = Math.floor(T);
+  const oc = document.createElement('canvas');
+  oc.width = Math.ceil(st.w + padX * 2) + 2; oc.height = Math.ceil(st.h + padY * 2) + 2;
+  const o = oc.getContext('2d');
+  o.translate(padX + (L - Li), padY + (T - Ti));
+  const p = new Path2D(shapePath(st));
+  o.fillStyle = st.bg; o.fill(p);
+  if (st.borderWidth > 0){ o.lineWidth = st.borderWidth; o.strokeStyle = st.border; o.lineJoin = 'round'; o.stroke(p); }
+  if (m.label){ o.font = font; o.fillStyle = st.textColor; o.textAlign = 'center'; o.textBaseline = 'middle'; o.fillText(m.label, tp.x, tp.y); }
+  ctx.save(); ctx.globalAlpha = st.opacity; ctx.drawImage(oc, Li, Ti); ctx.restore();
+}
+async function renderExportCanvas(){
+  const im = await loadImg(S.image.dataURL);
+  const c = document.createElement('canvas'); c.width = S.image.w; c.height = S.image.h;
+  const ctx = c.getContext('2d'); ctx.drawImage(im, 0, 0, S.image.w, S.image.h);
+  S.markers.forEach(m => drawMarker(ctx, m));
+  return c;
+}
+async function exportPNG(){
+  if (!S.image) return;
+  try {
+    const c = await renderExportCanvas();
+    c.toBlob(b => { if (!b){ toast('匯出失敗：圖片太大'); return; } const name = baseName() + '.png'; download(b, name); toast(`已匯出 PNG（${c.width} × ${c.height} px）`); }, 'image/png');
+  } catch(err){ toast('匯出失敗'); console.error(err); }
+}
+$('#btnExport').onclick = exportPNG;
+
+/* ========== 自動暫存 ========== */
+let saveT = null;
+function scheduleAutosave(){ clearTimeout(saveT); saveT = setTimeout(autosave, 600); }
+function idb(){ return new Promise((res, rej) => { const r = indexedDB.open('mapMarkerEditor', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+async function idbSet(k, v){ const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, k); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); }
+async function idbGet(k){ const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction('kv', 'readonly'); const q = tx.objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
+async function autosave(){
+  const json = JSON.stringify(serialize());
+  let okLS = false;
+  try { localStorage.setItem(LS_KEY, json); okLS = true; } catch(e){ try { localStorage.removeItem(LS_KEY); } catch(_){} }
+  try { await idbSet('autosave', okLS ? null : json); } catch(e){ if (!okLS) toast('自動暫存失敗（圖片過大），請記得手動存檔', 3500); }
+}
+function savePresetsLocal(){ try { localStorage.setItem(LS_PRESETS, JSON.stringify(S.presets)); } catch(e){} }
+async function restoreAutosave(){
+  let cands = [];
+  try { const a = localStorage.getItem(LS_KEY); if (a) cands.push(JSON.parse(a)); } catch(e){}
+  try { const b = await idbGet('autosave'); if (b) cands.push(JSON.parse(b)); } catch(e){}
+  cands = cands.filter(d => d && Array.isArray(d.markers)).sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+  if (!cands.length){
+    try { const p = JSON.parse(localStorage.getItem(LS_PRESETS) || 'null'); if (Array.isArray(p) && p.length) S.presets = p.map(x => ({id: x.id, name: x.name, style: normStyle(x.style)})); } catch(e){}
+    return false;
+  }
+  const d = cands[0];
+  try { applyProject(d); } catch(e){ return false; }
+  if (Array.isArray(d.presets)) S.presets = d.presets.map(x => ({id: x.id, name: x.name, style: normStyle(x.style)}));
+  if (!S.image && !S.markers.length) return false;
+  const t = new Date(d.savedAt);
+  toast(`已還原上次的編輯內容（${isNaN(t) ? '' : t.toLocaleString('zh-TW', {hour12:false})}）`, 3500);
+  return true;
+}
+
+/* ========== 其他控制項 ========== */
+$('#btnUndo').onclick = undo; $('#btnRedo').onclick = redo;
+$('#btnAdd').onclick = () => setAddMode(!addMode);
+$('#zoomIn').onclick = () => zoomCenter(1.25);
+$('#zoomOut').onclick = () => zoomCenter(0.8);
+$('#zoomFit').onclick = fitView;
+$('#zoom100').onclick = () => { const r = vp.getBoundingClientRect(); zoomAt(r.width/2, r.height/2, 1 / V.s); };
+$('#labelMode').onchange = e => { S.labelMode = e.target.value; scheduleAutosave(); };
+$('#newStyle').onchange = e => { S.newStyle = e.target.value; scheduleAutosave(); };
+$('#projName').oninput = e => { S.projName = e.target.value; scheduleAutosave(); };
+window.addEventListener('resize', () => renderView());
+
+document.addEventListener('keydown', e => {
+  if (!$('#modalWrap').hidden) return;
+  const ctrl = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+  if (ctrl && k === 's'){ e.preventDefault(); saveProject(); return; }
+  if (e.target.matches('input[type=text],textarea')) return;
+  if (ctrl && k === 'z'){ e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (ctrl && k === 'y'){ e.preventDefault(); redo(); return; }
+  if (e.key === 'Escape'){
+    if (addMode) setAddMode(false); else if (!popup.hidden) closePopup(true); else select(null);
+    return;
+  }
+  if ((e.key === 'Delete') && sel){ e.preventDefault(); deleteMarker(sel); }
+});
+
+/* ========== 啟動 ========== */
+(async function init(){
+  await restoreAutosave();
+  await setImageSrc();
+  renderAll(); fitView(); resetHistory();
+})();
+</script>
+</body>
+</html>
